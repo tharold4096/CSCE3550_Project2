@@ -1,5 +1,4 @@
 import base64
-import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -40,11 +39,11 @@ _keys = [
     
 def get_unexpired():               
     return [key for key in _keys if not key.is_expired()]
-def get_key(kid):
-    for key in _keys:
-        if key.kid == kid:
-            return key
-    return None
+#def get_key(kid):
+#    for key in _keys:
+#        if key.kid == kid:
+#            return key
+#    return None
 
 def to_jwk(key: Key) -> dict:
     public_key = key.private_key.public_key()
@@ -71,10 +70,10 @@ def signing_selector(expired=False):
 
 
 
-if __name__ == "__main__":
+#if __name__ == "__main__":
     #number = input("Enter a number to convert to base64: ")
     #print(f"Base64 representation: {int_to_str(int(number))}")
-    assert int_to_str(65537) == "AQAB"
-    print(len(get_unexpired()))
+ #   assert int_to_str(65537) == "AQAB"
+  #  print(len(get_unexpired()))
 
 
