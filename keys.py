@@ -1,8 +1,10 @@
 import base64
+import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from uuid import uuid4
+from datetime import datetime, timezone
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+import db
 
 #Method to calculate how many bytes are needed to represent a number
 def calc_bytes(v):
@@ -22,28 +24,42 @@ class Key:
     kid: str
     private_key: rsa.RSAPrivateKey
     expiry: datetime
-    def is_expired(self) -> bool:
-        return datetime.now(timezone.utc) > self.expiry
 
-    
-def generate_key(expiry):
+
+def serialize_key(private_key: rsa.RSAPrivateKey) -> bytes:
+    return private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
+
+def deserialize_key(pem: bytes) -> rsa.RSAPrivateKey:
+    return serialization.load_pem_private_key(pem, password=None)
+
+
+def row_to_key(row) -> Key:
+    kid, pem, exp = row
+    return Key(str(kid), deserialize_key(pem), datetime.fromtimestamp(exp, timezone.utc))
+
+
+def create_key(exp: int, path=db.DB_FILE) -> int:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    kid = str(uuid4())
-    return Key(kid, private_key, expiry)
+    return db.insert_key(serialize_key(private_key), exp, path)
 
-_keys = [
-     generate_key(datetime.now(timezone.utc) + timedelta(hours=1)),
-     generate_key(datetime.now(timezone.utc) - timedelta(hours=1))
-]
 
-    
-def get_unexpired():               
-    return [key for key in _keys if not key.is_expired()]
-#def get_key(kid):
-#    for key in _keys:
-#        if key.kid == kid:
-#            return key
-#    return None
+def ensure_keys(path=db.DB_FILE):
+    db.init_db(path)
+    now = int(time.time())
+    if not db.get_valid_keys(now, path):
+        create_key(now + 3600, path)
+    if db.get_expired_key(now, path) is None:
+        create_key(now - 3600, path)
+
+
+def get_unexpired(path=db.DB_FILE) -> list:
+    return [row_to_key(row) for row in db.get_valid_keys(int(time.time()), path)]
+
 
 def to_jwk(key: Key) -> dict:
     public_key = key.private_key.public_key()
@@ -56,24 +72,17 @@ def to_jwk(key: Key) -> dict:
         "n": int_to_str(numbers.n),
         "e": int_to_str(numbers.e)
     }
-def jwks_wrapper() -> dict:
-    return {"keys": [to_jwk(key) for key in get_unexpired()]}
-
-def signing_selector(expired=False):
-    for key in _keys:
-        if expired and key.is_expired():
-            return key
-        elif not expired and not key.is_expired():
-            return key
-
-    return None
 
 
-
-#if __name__ == "__main__":
-    #number = input("Enter a number to convert to base64: ")
-    #print(f"Base64 representation: {int_to_str(int(number))}")
- #   assert int_to_str(65537) == "AQAB"
-  #  print(len(get_unexpired()))
+def jwks_wrapper(path=db.DB_FILE) -> dict:
+    return {"keys": [to_jwk(key) for key in get_unexpired(path)]}
 
 
+def signing_selector(expired=False, path=db.DB_FILE):
+    now = int(time.time())
+    if expired:
+        row = db.get_expired_key(now, path)
+    else:
+        rows = db.get_valid_keys(now, path)
+        row = rows[0] if rows else None
+    return row_to_key(row) if row else None

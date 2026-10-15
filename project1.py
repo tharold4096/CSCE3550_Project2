@@ -99,6 +99,7 @@ class JWKSHandler(BaseHTTPRequestHandler):
             self.send_error(405)
      
 if __name__ == "__main__":
+    keys.ensure_keys()
     with HTTPServer(("", PORT), JWKSHandler) as httpd:
         print(f"JWKS server on http://localhost:{PORT}")
         try:
