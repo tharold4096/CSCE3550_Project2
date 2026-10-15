@@ -216,3 +216,4 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+totally_not_my_privateKeys.db
